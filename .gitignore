@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 assistant.db
 .env
+chroma_db/

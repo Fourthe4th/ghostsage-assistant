@@ -18,8 +18,8 @@
     }
     .container {
       width: 100%;
-      max-width: 900px;
-      height: 90vh;
+      max-width: 980px;
+      height: 92vh;
       display: flex;
       flex-direction: column;
       border-radius: 12px;
@@ -28,7 +28,7 @@
       overflow: hidden;
     }
     .header {
-      padding: 12px 16px;
+      padding: 10px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -41,11 +41,81 @@
       font-size: 16px;
     }
     .badge {
-      font-size: 12px;
+      font-size: 11px;
       padding: 2px 8px;
       border-radius: 999px;
       background: #0f766e;
       color: white;
+    }
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 260px;
+      border-right: 1px solid #1f2937;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #020617;
+    }
+    .sidebar-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .upload-box {
+      border-radius: 10px;
+      border: 1px dashed #374151;
+      padding: 8px;
+      background: #030712;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .upload-label {
+      font-size: 12px;
+      color: #d1d5db;
+    }
+    .upload-input {
+      font-size: 11px;
+      color: #9ca3af;
+    }
+    .upload-btn {
+      border-radius: 8px;
+      border: none;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      background: #4b5563;
+      color: white;
+      align-self: flex-start;
+      transition: background 0.15s ease, transform 0.05s ease;
+    }
+    .upload-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .upload-btn:not(:disabled):active {
+      transform: translateY(1px);
+      background: #374151;
+    }
+    .upload-status {
+      font-size: 11px;
+      color: #9ca3af;
+      min-height: 30px;
+      white-space: pre-wrap;
+    }
+    .chat-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
     }
     .chat {
       flex: 1;
@@ -135,14 +205,37 @@
 <div class="container">
   <div class="header">
     <div class="title">GhostSage – Personal AI Assistant</div>
-    <div class="badge">v1.0</div>
+    <div class="badge">v2.0 – RAG + Web</div>
   </div>
-  <div id="chat" class="chat"></div>
-  <div class="status" id="status">New session. Say hi 👋</div>
-  <form id="chat-form" class="input-bar">
-    <textarea id="message" placeholder="Ask GhostSage anything..." rows="1"></textarea>
-    <button type="submit" id="send-btn">Send</button>
-  </form>
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-title">Documents</div>
+      <div class="upload-box">
+        <div class="upload-label">
+          Upload PDFs or text files. GhostSage will index them and use them to answer questions.
+        </div>
+        <form id="upload-form">
+          <input
+            type="file"
+            id="file-input"
+            name="file"
+            class="upload-input"
+            accept=".pdf,.txt,.md,.markdown,.log,.json"
+          />
+          <button type="submit" id="upload-btn" class="upload-btn">Upload & Index</button>
+        </form>
+        <div id="upload-status" class="upload-status"></div>
+      </div>
+    </div>
+    <div class="chat-wrapper">
+      <div id="chat" class="chat"></div>
+      <div class="status" id="status">New session. Say hi 👋 or upload a document.</div>
+      <form id="chat-form" class="input-bar">
+        <textarea id="message" placeholder="Ask GhostSage anything... (URLs and document questions supported)" rows="1"></textarea>
+        <button type="submit" id="send-btn">Send</button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -152,8 +245,14 @@
   const statusEl = document.getElementById('status');
   const sendBtn = document.getElementById('send-btn');
 
+  const uploadFormEl = document.getElementById('upload-form');
+  const uploadBtnEl = document.getElementById('upload-btn');
+  const uploadStatusEl = document.getElementById('upload-status');
+  const fileInputEl = document.getElementById('file-input');
+
   let sessionId = null;
   let isSending = false;
+  let isUploading = false;
 
   function appendMessage(role, content) {
     const wrapper = document.createElement('div');
@@ -202,7 +301,7 @@
       const data = await res.json();
       sessionId = data.session_id;
       appendMessage('assistant', data.reply);
-      statusEl.textContent = 'Session ID: ' + sessionId;
+      statusEl.textContent = 'Session ID: ' + sessionId + ' — RAG + Web enabled.';
     } catch (err) {
       console.error(err);
       appendMessage('assistant', 'Error: ' + err.message);
@@ -225,6 +324,51 @@
       e.preventDefault();
       const text = messageEl.value;
       sendMessage(text);
+    }
+  });
+
+  uploadFormEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (isUploading) return;
+
+    const file = fileInputEl.files[0];
+    if (!file) {
+      uploadStatusEl.textContent = 'Please choose a file first.';
+      return;
+    }
+
+    isUploading = true;
+    uploadBtnEl.disabled = true;
+    uploadStatusEl.textContent = 'Uploading and indexing...';
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (data.status === 'ok') {
+        uploadStatusEl.textContent =
+          `Indexed ${data.chunks_indexed} chunks from "${data.filename}". You can now ask questions about it.`;
+      } else {
+        uploadStatusEl.textContent =
+          `File processed, but no usable text was extracted from "${data.filename}".`;
+      }
+    } catch (err) {
+      console.error(err);
+      uploadStatusEl.textContent = 'Upload error: ' + err.message;
+    } finally {
+      isUploading = false;
+      uploadBtnEl.disabled = false;
     }
   });
 </script>
